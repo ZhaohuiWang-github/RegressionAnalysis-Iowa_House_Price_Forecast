@@ -1,0 +1,257 @@
+---
+title: "HW3"
+author: "Zhaohui Wang"
+date: "2/22/2022"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## PART 1
+
+```{r}
+library(readr)
+library(car)
+library(corrplot)
+AmesTrain = read_csv("AmesTrain22.csv")
+```
+
+get the numeric variables  
+
+```{r}
+numeric_vars = unlist(lapply(AmesTrain, is.numeric))
+AmesNum = AmesTrain[ , numeric_vars]
+```
+
+look at the correlation of the predictors  
+
+```{r}
+corrplot(cor(AmesNum[, 2:27]), type = "upper")
+```
+
+
+```{r}
+sort(cor(AmesNum[, 2:27])[, 1], decreasing = T)
+```
+
+I chose predictors with absolute values of correlation coefficients greater than 0.5.
+
+```{r}
+num_model1 = lm(Price ~ Quality + GroundSF + BasementSF + GarageSF + GarageCars + 
+                  FirstSF + YearBuilt + YearRemodel + FullBath + TotalRooms, data = AmesNum)
+```
+
+
+```{r}
+summary(num_model1)
+```
+
+```{r}
+vif(num_model1)
+```
+
+```{r}
+AIC(num_model1)
+```
+
+As we can see, the R-squared  is 0.8318.   
+
+The t-value of GarageCars is -1.763 and the p-value of it is 0.078, which is larger than 0.05, so we cannot reject the null hypothesis of no linear relationship. And the same applies to TotalRooms.   
+
+Besides, the VIF values of GarageSF and GarageCars are larger than 5, which means there is a multicollinearity trouble.  
+
+Therefore, I chose to remove GarageCars and TotalRooms.   
+
+
+```{r}
+num_model2 = lm(Price ~ Quality + GroundSF + BasementSF + GarageSF + FirstSF + 
+                  YearBuilt + YearRemodel + FullBath, data = AmesNum)
+```
+
+
+```{r}
+summary(num_model2)
+```
+
+```{r}
+vif(num_model2)
+```
+
+```{r}
+AIC(num_model2)
+```
+
+As we can see, compared with the first model, the AIC is smaller, which means that the change in the model is successful.
+
+And all the p-values are smaller than 0.05, all the VIF values are smaller than 5. Therefore, this model is not bad.   
+
+
+\newpage
+
+## PART 2
+
+```{r}
+plot(num_model2, 1)
+```
+
+As we can see, the linearity is not very good, since there is a V-shape curving relationship. I think a transformation could look more better. And there is definitely some non-constant variance, as the residuals are more spread out for high price houses.   
+
+
+```{r}
+qqPlot(num_model2$residuals)
+```
+
+The QQ plot of the residuals deviates clearly from the line at the lower and upper tails. This indicates the residuals are not normally distributed, which violates the linear model assumption.   
+
+The zero mean condition is guaranteed by using the least squares line. The independence condition should be fine because the sample of houses should be roughly independent.  
+
+
+```{r}
+rstudent(num_model2)[abs(rstudent(num_model2)) > 3]
+```
+
+As we can see, 11 of the 600 data points had an absolute value of studentized residuals greater than 3. This is not a very high percentage.
+
+To further improve the model, considering that we don't use transformations at this step, I chose to filter out the predictors with correlation values greater than 0.65. 
+
+```{r}
+num_model3 = lm(Price ~ Quality + GroundSF + BasementSF + GarageSF, data = AmesNum)
+
+summary(num_model3)
+```
+
+```{r}
+AIC(num_model3)
+```
+But the refitted model's AIC value is much larger than the previous one, which means this operation may be not successful. 
+
+\newpage
+
+## PART 3
+
+To figure out how to do transformation, I examined the relationships between the predictors and response:  
+
+```{r}
+plot(Price ~ ., data = AmesNum[, 2:27])
+```
+As we can see, for many predictors, the rate of price growth is getting faster and faster, so I wanted to convert the Price to log(Price).  
+
+```{r}
+plot(log(Price) ~ ., data = AmesNum[, 2:27])
+```
+According to the figures above, I convert the YearBuilt to YearBuilt^2, SecondSF to sqrt(SecondSF). 
+
+And you can also find that the relationship between price and different types of bathrooms is extremely poor, so I created a new variable TotalBath which count the total bathrooms in the house. 
+
+```{r}
+AmesNum["TotalBath"] = AmesNum["BasementFBath"] + AmesNum["BasementHBath"] +
+  AmesNum["FullBath"] + AmesNum["HalfBath"]
+```
+
+```{r}
+plot(log(Price) ~ TotalBath, data = AmesNum[, 2:28])
+```
+
+Obviously, the new predictor TotalBath is much better than previous separated predictors. 
+
+Then I used the backward elimination to build the model:  
+
+
+```{r}
+num_model_full = lm(log(Price) ~ LotFrontage + Quality + Condition + I(YearBuilt^2)
+                    + YearRemodel + BasementFinSF + BasementUnFinSF + BasementSF 
+                    + FirstSF + I(sqrt(SecondSF)) + GroundSF + Bedroom + TotalRooms 
+                    + Fireplaces + GarageCars + GarageSF + WoodDeckSF + OpenPorchSF 
+                    + EnclosedPorchSF + ScreenPorchSF+ TotalBath, data = AmesNum)
+
+summary(num_model_full)
+```
+
+```{r}
+step(num_model_full, direction = "backward")
+```
+
+Then I used the stepwise selection to build the model:  
+
+```{r}
+constmodel = lm(log(Price) ~ 1, data = AmesNum)
+step(constmodel, scope = list(upper = num_model_full), direction = "both")
+```
+
+As we can see, the model built by backward elimination is same as the model built by stepwise. 
+
+My process to transform predictors or response is to first draw the scatter plots of the response and each predictor, so that I can find the relationship between the response and each predictor. Then, based on the trend of these scatter plots, determine what transformations to make to the response or predictors. This process works for a new data set as well.   
+
+
+\newpage
+
+## PART 4
+
+```{r}
+num_model_auto = lm(log(Price) ~ Quality + GroundSF + YearBuilt^2 + BasementFinSF 
+                    + Condition + BasementSF + GarageSF + Fireplaces + Bedroom + LotFrontage 
+                    + TotalRooms + ScreenPorchSF + EnclosedPorchSF + YearRemodel 
+                    + OpenPorchSF, data = AmesNum)
+```
+
+
+```{r}
+summary(num_model_auto)
+```
+
+```{r}
+plot(num_model_auto, 1)
+```
+
+As we can see, linearity looks alright, as there is not an obvious curving relationship. There is definitely some non-constant variance, but looks not bad.  
+
+```{r}
+qqPlot(num_model_auto)
+```
+
+The QQ plot of the residuals deviates clearly from the line at lower and upper tails, especially the lower tail. This indicates the residuals are not normally distributed, which violates the linear model assumption. 
+
+The zero mean condition is guaranteed by using the least squares line. The independence condition should be fine because the sample of houses should be roughly independent.  
+
+We can clearly find that this model is better than the model built in Part 1. 
+
+\newpage
+
+## PART 5
+
+```{r}
+summary(num_model_auto)
+```
+
+As we can see, the P-value of OpenPorchSF is larger than 0.05, so I decided to remove it. 
+
+```{r}
+vif(num_model_auto)
+```
+
+All of the VIF values are less than 5, which means there is no multicollinearity trouble.
+
+Therefore, the refitted model is:  
+
+```{r}
+num_model_auto_2 = lm(log(Price) ~ Quality + GroundSF + YearBuilt^2 + BasementFinSF 
+                      + Condition + BasementSF + GarageSF + Fireplaces + Bedroom + LotFrontage 
+                      + TotalRooms + ScreenPorchSF + EnclosedPorchSF 
+                      + YearRemodel, data = AmesNum)
+
+summary(num_model_auto_2)
+```
+
+
+```{r}
+sample_house = data.frame(Quality = 7, GroundSF = 2047, YearBuilt = 1992, 
+                          BasementFinSF = 0, Condition = 5, BasementSF = 875, GarageSF = 304, 
+                          Fireplaces = 1, Bedroom = 3, LotFrontage = 300, TotalRooms = 9, 
+                          ScreenPorchSF = 0, EnclosedPorchSF = 0, YearRemodel = 2001)
+
+
+exp(predict(num_model_auto_2, sample_house, interval="predict", level = .95))
+```
+
+We expect a price of \$238,492 for this sample house. We can predict with 95% certainty that a house with these conditions will sell for between \$183,630 and \$309,744. 
+
